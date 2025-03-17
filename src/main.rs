@@ -1,41 +1,60 @@
+use axum::{
+    routing::{get, post},
+    Router, Json,
+};
+use dotenvy::dotenv;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::net::SocketAddr;
+use hyper::Server; // Gunakan ini
+use tokio;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let supabase_url = "https://psvmzuzlkfoippligqju.supabase.co";
-    let supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzdm16dXpsa2ZvaXBwbGlncWp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyMTQ2NjAsImV4cCI6MjA1Nzc5MDY2MH0.uQPuWKuZVwArLXMGRTrfxTMv05pgGfWcqnhmjNBnnxU";
+async fn main() {
+    // Load .env
+    dotenv().ok();
 
-    let client = Client::new();
-    
-    // Contoh: Insert data ke Supabase
-    let new_user = User {
-        name: "Richard".to_string(),
-        email: "john@example.com".to_string(),
-    };
+    // Router dengan endpoint
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/add_user", post(add_user));
 
-    let response = client
-        .post(format!("{}/rest/v1/users", supabase_url))
-        .header("apikey", supabase_key)
-        .header("Authorization", format!("Bearer {}", supabase_key))
-        .header("Content-Type", "application/json")
-        .header("Prefer", "return=representation")
-        .json(&new_user)
-        .send()
-        .await?;
-
-        let status = response.status();
-        let body = response.text().await?;
-        
-        println!("HTTP Status: {}", status);
-        println!("Response Body: {}", body);
-
-    Ok(())
+    // Jalankan server di port 3000
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    println!("Server running at http://{}", addr);
+    Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+async fn root() -> &'static str {
+    "Hello from Axum!"
+}
+
+#[derive(Serialize, Deserialize)]
 struct User {
     name: String,
     email: String,
+}
+
+async fn add_user(Json(user): Json<User>) -> Json<serde_json::Value> {
+    let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL is not set");
+    let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY is not set");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{}/rest/v1/users", supabase_url))
+        .header("apikey", &supabase_key)
+        .header("Authorization", format!("Bearer {}", supabase_key))
+        .header("Content-Type", "application/json")
+        .header("Prefer", "return=representation")
+        .json(&user)
+        .send()
+        .await
+        .unwrap();
+
+    let json_response = response.json::<serde_json::Value>().await.unwrap();
+    Json(json_response)
 }
